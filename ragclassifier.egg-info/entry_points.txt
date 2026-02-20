@@ -1,0 +1,2 @@
+[console_scripts]
+dummy-test = scripts.dummy_test_cli:main
