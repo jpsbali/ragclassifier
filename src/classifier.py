@@ -11,7 +11,7 @@ from src.agents import (
     finalize_with_supervisor,
 )
 from src.config import AppConfig
-from src.models import AgentVote, SupervisorDecision, TokenUsage
+from src.models import AgentVote, RoundHistory, SupervisorDecision, TokenUsage
 
 
 class GraphState(TypedDict, total=False):
@@ -27,6 +27,7 @@ class GraphState(TypedDict, total=False):
     should_finalize: bool
     token_usages: list[dict[str, Any]]
     supervisor_decision: dict[str, Any]
+    history: list[dict[str, Any]]
 
 
 class DocumentClassifier:
@@ -71,10 +72,19 @@ class DocumentClassifier:
         usage_b["source"] = "agent_b"
         current_usages.extend([usage_a, usage_b])
 
+        # Record history for this round
+        history_entry = {
+            "round": round_num,
+            "agent_a": agent_a_vote.model_dump(),
+            "agent_b": agent_b_vote.model_dump(),
+        }
+        updated_history = state.get("history", []) + [history_entry]
+
         return {
             "agent_a_vote": agent_a_vote.model_dump(),
             "agent_b_vote": agent_b_vote.model_dump(),
             "token_usages": current_usages,
+            "history": updated_history,
         }
 
     def _evaluate_votes(self, state: GraphState) -> GraphState:
@@ -138,6 +148,20 @@ class DocumentClassifier:
             agent_a_vote=agent_a,
             agent_b_vote=agent_b,
         )
+
+        # Ensure rounds_used is accurately reflected from state
+        final_decision.rounds_used = state.get("round_num", 1)
+
+        # Populate history
+        raw_history = state.get("history", [])
+        final_decision.history = [
+            RoundHistory(
+                round=h["round"],
+                agent_a=AgentVote.model_validate(h["agent_a"]),
+                agent_b=AgentVote.model_validate(h["agent_b"]),
+            )
+            for h in raw_history
+        ]
 
         current_usages = state.get("token_usages", [])
         usage = finalizer_tokens.model_dump()

@@ -594,7 +594,22 @@ def main() -> None:
 
         for decision in results:
             with st.expander(f"{decision.document_name} - {decision.classification.value}"):
+                col1, col2 = st.columns(2)
+                col1.metric("Confidence", f"{decision.confidence:.2f}")
+                col2.metric("Rounds Used", decision.rounds_used)
                 st.write("Reason:", decision.reason)
+
+                if len(decision.history) > 1:
+                    st.markdown("---")
+                    st.subheader("Debate History")
+                    for h in decision.history:
+                        st.markdown(f"**Round {h.round}**")
+                        c1, c2 = st.columns(2)
+                        c1.info(f"Agent A: {h.agent_a.classification.value} ({h.agent_a.confidence:.2f})")
+                        c1.caption(h.agent_a.reason)
+                        c2.info(f"Agent B: {h.agent_b.classification.value} ({h.agent_b.confidence:.2f})")
+                        c2.caption(h.agent_b.reason)
+
                 st.write("Matched rubric points:", decision.matched_rubric_points)
                 if decision.total_token_usage:
                     st.write("Total Token Usage:", decision.total_token_usage.model_dump())

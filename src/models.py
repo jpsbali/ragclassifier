@@ -26,6 +26,12 @@ class ReconciliationGuidance(BaseModel):
     instructions_for_retry: str = Field(min_length=1)
 
 
+class RoundHistory(BaseModel):
+    round: int
+    agent_a: AgentVote
+    agent_b: AgentVote
+
+
 class SupervisorDecision(BaseModel):
     document_id: str
     document_name: str
@@ -42,3 +48,4 @@ class SupervisorDecision(BaseModel):
     supervisor_token_usage: TokenUsage | None = None
     agent_a_token_usage: TokenUsage | None = None
     agent_b_token_usage: TokenUsage | None = None
+    history: list[RoundHistory] = Field(default_factory=list)
