@@ -35,3 +35,4 @@ results/
 .vscode/
 .DS_Store
 
+ragclassifier.egg-info/
