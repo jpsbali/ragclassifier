@@ -1,90 +1,68 @@
 # LangGraph Multi-Agent Document Classifier
 
-This app classifies documents into:
-- `RESTRICTED`
-- `CONFIDENTIAL`
-- `PUBLIC`
+This application classifies documents into `RESTRICTED`, `CONFIDENTIAL`, or `PUBLIC` categories using a multi-agent LLM architecture. It features a Supervisor agent that coordinates two worker agents to reach a consensus based on a strict rubric.
 
-It uses:
-- 1 Supervisor agent
-- 2 Sub-agents
-- Configurable model endpoint + API key per agent
-- Retry loop when sub-agents disagree or confidence is below threshold
-- Pydantic structured output from supervisor
+## Features
 
-## Quickstart
+-   **Multi-Agent Architecture**: Supervisor + 2 Worker Agents with debate/reconciliation loops.
+-   **Model Flexibility**: Supports OpenAI and OpenRouter (Anthropic, Google, etc.).
+-   **Broad File Support**: Processes `.txt`, `.md`, `.pdf`, `.docx`, `.pptx`, and `.xlsx`.
+-   **Observability**: Integrated with LangSmith for tracing.
+-   **Rich UI**:
+    -   Streamlit-based interface with Dark Mode.
+    -   Historical run tracking with persistence.
+    -   Confidence trend visualization (Altair charts).
+    -   Export results to CSV/JSON/ZIP.
+    -   Directory browsing and drag-and-drop uploads.
 
-1. Sync dependencies with `uv` and activate virtual environment:
+## Setup
 
-```bash
-uv sync
-source .venv/Scripts/activate
-```
+1.  **Install Dependencies**:
+    Ensure you have `uv` installed.
+    ```bash
+    uv sync
+    ```
 
-2. Create `.env` from `.env.example` and set keys/models/endpoints.
+2.  **Configuration**:
+    Copy `.env.example` to `.env` and configure your keys.
+    ```bash
+    cp .env.example .env
+    ```
 
+    **For OpenAI:**
+    -   Set `USE_OPENROUTER=false`
+    -   Set `OPENAI_API_KEY`
 
-3. Run:
+    **For OpenRouter:**
+    -   Set `USE_OPENROUTER=true`
+    -   Set `OPENROUTER_API_KEY`
+    -   Update `OPENROUTER_SUPERVISOR_MODEL`, etc.
 
+3.  **LangSmith (Optional)**:
+    Set `LANGCHAIN_TRACING_V2=true` and provide `LANGCHAIN_API_KEY` in `.env`.
+
+## Usage
+
+Run the Streamlit application:
 ```bash
 uv run streamlit run app.py
 ```
 
-## Test From Command Line
+### Offline Testing
 
-1. Sync with dev dependencies:
-
+Run the test suite without API calls:
 ```bash
-uv sync --group dev
+uv run pytest
 ```
 
-2. Run test suite (offline):
-
+Run the dummy CLI for end-to-end logic testing:
 ```bash
-uv run pytest -q
-```
-
-3. Run dummy end-to-end classification with no API calls:
-
-```bash
-uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx
-```
-
-4. Force a disagreement/retry round for graph behavior testing:
-
-```bash
-uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx --force-disagreement
-```
-
-## Command Reference
-
-```bash
-# Install runtime dependencies
-uv sync
-
-# Install runtime + dev dependencies
-uv sync --group dev
-
-# Run Streamlit app
-uv run streamlit run app.py
-
-# Run offline tests
-uv run pytest -q
-
-# Run dummy CLI via Python module path
-uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx
-uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx --force-disagreement
-
-# Run dummy CLI via uv entrypoint
 uv run dummy-test --document ClassifyingRules.docx
-uv run dummy-test --document ClassifyingRules.docx --force-disagreement
-
-# Optional direct execution (without uv run)
-chmod +x scripts/dummy_test_cli.py
-./scripts/dummy_test_cli.py --document ClassifyingRules.docx
 ```
 
-## Notes
+## Project Structure
 
-- API keys are loaded from `.env` by default and are editable in the Streamlit sidebar.
-- Each agent can use a different `base_url` and `model`.
+-   `src/classifier.py`: Main LangGraph workflow.
+-   `src/agents.py`: LLM interaction logic.
+-   `src/config.py`: Configuration loading.
+-   `app.py`: Streamlit UI.

@@ -51,5 +51,7 @@ graph TD
 -   **LangChain**: Provides the core framework for interacting with LLMs, including prompt management and structured output capabilities.
 -   **Pydantic**: Used extensively for defining data models (`AgentVote`, `SupervisorDecision`, etc.). This ensures that the output from the LLMs is structured, typed, and validated.
 -   **Streamlit**: Powers the web-based user interface (`app.py`), allowing for easy document upload and configuration of the agents.
--   **OpenAI**: The primary LLM provider, accessed via the `ChatOpenAI` client. The architecture is flexible enough to support other providers.
+-   **OpenAI / OpenRouter**: The system supports both OpenAI and OpenRouter (for access to Anthropic, Google, etc.) using the `ChatOpenAI` client with configurable base URLs.
+-   **LangSmith**: Integrated for LLM observability and tracing.
+-   **Document Parsers**: `python-docx`, `python-pptx`, `openpyxl`, and `pypdf` for handling various office document formats.
 -   **Python `unittest.mock`**: Crucial for the offline testing strategy (`scripts/dummy_test_cli.py`), allowing for end-to-end testing of the application logic without making live API calls.

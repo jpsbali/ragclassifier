@@ -45,7 +45,7 @@ The main source code for the application logic.
 -   **`config.py`**: Defines the Pydantic models used for configuring the application (e.g., `AppConfig`, `AgentModelConfig`). It handles loading configuration from the environment.
 -   **`models.py`**: Defines the Pydantic models for the structured data passed between agents and as final output (e.g., `AgentVote`, `SupervisorDecision`). This is crucial for reliable data exchange with the LLMs.
 -   **`rubric.py`**: A critical file that stores the classification rubric text and the main system prompts as Python constants. Centralizing the prompts here makes them easy to manage and reuse.
--   **`document_loader.py`**: A utility module with functions to extract plain text from various file formats (`.txt`, `.pdf`, `.docx`).
+-   **`document_loader.py`**: A utility module with functions to extract plain text from various file formats (`.txt`, `.md`, `.pdf`, `.docx`, `.pptx`, `.xlsx`).
 
 ### `scripts/`
 
