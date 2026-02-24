@@ -1,4 +1,5 @@
 from typing import Any, TypedDict
+import time
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -28,6 +29,18 @@ class GraphState(TypedDict, total=False):
     token_usages: list[dict[str, Any]]
     supervisor_decision: dict[str, Any]
     history: list[dict[str, Any]]
+    agent_a_duration: float
+    agent_b_duration: float
+    supervisor_duration: float
+
+
+def _timed_classify(llm, document_name, document_text, round_num, retry_context):
+    start = time.time()
+    vote, usage = classify_with_agent(
+        llm, document_name, document_text, round_num, retry_context
+    )
+    duration = time.time() - start
+    return vote, usage, duration
 
 
 class DocumentClassifier:
@@ -46,7 +59,7 @@ class DocumentClassifier:
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             agent_a_future = executor.submit(
-                classify_with_agent,
+                _timed_classify,
                 llm=self.agent_a_llm,
                 document_name=document_name,
                 document_text=document_text,
@@ -54,15 +67,27 @@ class DocumentClassifier:
                 retry_context=retry_context,
             )
             agent_b_future = executor.submit(
-                classify_with_agent,
+                _timed_classify,
                 llm=self.agent_b_llm,
                 document_name=document_name,
                 document_text=document_text,
                 round_num=round_num,
                 retry_context=retry_context,
             )
-            agent_a_vote, agent_a_tokens = agent_a_future.result()
-            agent_b_vote, agent_b_tokens = agent_b_future.result()
+            agent_a_vote, agent_a_tokens, duration_a = agent_a_future.result()
+            agent_b_vote, agent_b_tokens, duration_b = agent_b_future.result()
+
+        # Update cumulative durations
+        total_a = state.get("agent_a_duration", 0.0) + duration_a
+        total_b = state.get("agent_b_duration", 0.0) + duration_b
+
+        # Calculate costs for history
+        def _calc_cost(usage, cfg):
+            return (usage.prompt_tokens / 1_000_000 * cfg.input_cost_per_m) + \
+                   (usage.completion_tokens / 1_000_000 * cfg.output_cost_per_m)
+        
+        cost_a = _calc_cost(agent_a_tokens, self.config.agent_a)
+        cost_b = _calc_cost(agent_b_tokens, self.config.agent_b)
 
         current_usages = state.get("token_usages", [])
         
@@ -77,6 +102,12 @@ class DocumentClassifier:
             "round": round_num,
             "agent_a": agent_a_vote.model_dump(),
             "agent_b": agent_b_vote.model_dump(),
+            "agent_a_duration_s": duration_a,
+            "agent_b_duration_s": duration_b,
+            "agent_a_token_usage": agent_a_tokens.model_dump(),
+            "agent_b_token_usage": agent_b_tokens.model_dump(),
+            "agent_a_cost": cost_a,
+            "agent_b_cost": cost_b,
         }
         updated_history = state.get("history", []) + [history_entry]
 
@@ -85,6 +116,8 @@ class DocumentClassifier:
             "agent_b_vote": agent_b_vote.model_dump(),
             "token_usages": current_usages,
             "history": updated_history,
+            "agent_a_duration": total_a,
+            "agent_b_duration": total_b,
         }
 
     def _evaluate_votes(self, state: GraphState) -> GraphState:
@@ -114,6 +147,7 @@ class DocumentClassifier:
         agent_a = AgentVote.model_validate(state["agent_a_vote"])
         agent_b = AgentVote.model_validate(state["agent_b_vote"])
 
+        start = time.time()
         guidance, recon_tokens = build_reconciliation_guidance(
             supervisor_llm=self.supervisor_llm,
             document_name=state["document_name"],
@@ -122,6 +156,8 @@ class DocumentClassifier:
             agent_a_vote=agent_a,
             agent_b_vote=agent_b,
         )
+        duration = time.time() - start
+        total_sup = state.get("supervisor_duration", 0.0) + duration
 
         current_usages = state.get("token_usages", [])
         usage = recon_tokens.model_dump()
@@ -132,12 +168,14 @@ class DocumentClassifier:
             "retry_context": guidance.instructions_for_retry,
             "round_num": round_num + 1,
             "token_usages": current_usages,
+            "supervisor_duration": total_sup,
         }
 
     def _finalize(self, state: GraphState) -> GraphState:
         agent_a = AgentVote.model_validate(state["agent_a_vote"])
         agent_b = AgentVote.model_validate(state["agent_b_vote"])
 
+        start = time.time()
         final_decision, finalizer_tokens = finalize_with_supervisor(
             supervisor_llm=self.supervisor_llm,
             document_id=state["document_id"],
@@ -148,9 +186,16 @@ class DocumentClassifier:
             agent_a_vote=agent_a,
             agent_b_vote=agent_b,
         )
+        duration = time.time() - start
+        total_sup = state.get("supervisor_duration", 0.0) + duration
 
         # Ensure rounds_used is accurately reflected from state
         final_decision.rounds_used = state.get("round_num", 1)
+
+        # Populate cumulative durations
+        final_decision.supervisor_duration_s = total_sup
+        final_decision.agent_a_duration_s = state.get("agent_a_duration", 0.0)
+        final_decision.agent_b_duration_s = state.get("agent_b_duration", 0.0)
 
         # Populate history
         raw_history = state.get("history", [])
@@ -159,6 +204,12 @@ class DocumentClassifier:
                 round=h["round"],
                 agent_a=AgentVote.model_validate(h["agent_a"]),
                 agent_b=AgentVote.model_validate(h["agent_b"]),
+                agent_a_duration_s=h.get("agent_a_duration_s", 0.0),
+                agent_b_duration_s=h.get("agent_b_duration_s", 0.0),
+                agent_a_token_usage=TokenUsage(**h.get("agent_a_token_usage", {})) if h.get("agent_a_token_usage") else None,
+                agent_b_token_usage=TokenUsage(**h.get("agent_b_token_usage", {})) if h.get("agent_b_token_usage") else None,
+                agent_a_cost=h.get("agent_a_cost", 0.0),
+                agent_b_cost=h.get("agent_b_cost", 0.0),
             )
             for h in raw_history
         ]
@@ -167,6 +218,40 @@ class DocumentClassifier:
         usage = finalizer_tokens.model_dump()
         usage["source"] = "supervisor"
         current_usages.append(usage)
+
+        # Calculate estimated cost
+        total_cost = 0.0
+        sup_cost = 0.0
+        a_cost = 0.0
+        b_cost = 0.0
+        for u in current_usages:
+            source = u.get("source")
+            prompt = u.get("prompt_tokens", 0)
+            completion = u.get("completion_tokens", 0)
+            
+            agent_cfg = None
+            if source == "supervisor":
+                agent_cfg = self.config.supervisor
+            elif source == "agent_a":
+                agent_cfg = self.config.agent_a
+            elif source == "agent_b":
+                agent_cfg = self.config.agent_b
+            
+            if agent_cfg:
+                cost = (prompt / 1_000_000 * agent_cfg.input_cost_per_m) + \
+                       (completion / 1_000_000 * agent_cfg.output_cost_per_m)
+                total_cost += cost
+                if source == "supervisor":
+                    sup_cost += cost
+                elif source == "agent_a":
+                    a_cost += cost
+                elif source == "agent_b":
+                    b_cost += cost
+        
+        final_decision.estimated_cost = total_cost
+        final_decision.supervisor_cost = sup_cost
+        final_decision.agent_a_cost = a_cost
+        final_decision.agent_b_cost = b_cost
 
         total_prompt = sum(u.get("prompt_tokens", 0) for u in current_usages)
         total_completion = sum(u.get("completion_tokens", 0) for u in current_usages)
@@ -221,6 +306,7 @@ class DocumentClassifier:
     def classify_document(
         self, document_id: str, document_name: str, document_text: str
     ) -> SupervisorDecision:
+        start_time = time.time()
         initial_state: GraphState = {
             "document_id": document_id,
             "document_name": document_name,
@@ -229,4 +315,6 @@ class DocumentClassifier:
             "token_usages": [],
         }
         final_state = self.graph.invoke(initial_state)
-        return SupervisorDecision.model_validate(final_state["supervisor_decision"])
+        decision = SupervisorDecision.model_validate(final_state["supervisor_decision"])
+        decision.total_duration_s = time.time() - start_time
+        return decision

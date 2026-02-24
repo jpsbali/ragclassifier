@@ -51,6 +51,22 @@ def _render_agent_settings(
         step=5.0,
         key=f"{cfg.name}_timeout",
     )
+    input_cost = st.number_input(
+        f"{title} Input Cost ($/1M tokens)",
+        min_value=0.0,
+        value=float(cfg.input_cost_per_m),
+        step=0.01,
+        format="%.2f",
+        key=f"{cfg.name}_input_cost",
+    )
+    output_cost = st.number_input(
+        f"{title} Output Cost ($/1M tokens)",
+        min_value=0.0,
+        value=float(cfg.output_cost_per_m),
+        step=0.01,
+        format="%.2f",
+        key=f"{cfg.name}_output_cost",
+    )
 
     return AgentModelConfig(
         name=cfg.name,
@@ -59,6 +75,8 @@ def _render_agent_settings(
         api_key=api_key.strip(),
         temperature=float(temperature),
         timeout_s=float(timeout_s),
+        input_cost_per_m=float(input_cost),
+        output_cost_per_m=float(output_cost),
     )
 
 
@@ -511,6 +529,14 @@ def main() -> None:
                 "consensus_reached",
                 "consensus_score",
                 "rounds_used",
+                "estimated_cost",
+                "supervisor_cost",
+                "agent_a_cost",
+                "agent_b_cost",
+                "total_duration_s",
+                "supervisor_duration_s",
+                "agent_a_duration_s",
+                "agent_b_duration_s",
             ]
             try:
                 with open(csv_filename, "w", newline="", encoding="utf-8") as f:
@@ -526,6 +552,14 @@ def main() -> None:
                                 "consensus_reached": d.consensus_reached,
                                 "consensus_score": d.consensus_score,
                                 "rounds_used": d.rounds_used,
+                                "estimated_cost": d.estimated_cost,
+                                "supervisor_cost": d.supervisor_cost,
+                                "agent_a_cost": d.agent_a_cost,
+                                "agent_b_cost": d.agent_b_cost,
+                                "total_duration_s": d.total_duration_s,
+                                "supervisor_duration_s": d.supervisor_duration_s,
+                                "agent_a_duration_s": d.agent_a_duration_s,
+                                "agent_b_duration_s": d.agent_b_duration_s,
                             }
                         )
             except IOError as e:
@@ -586,6 +620,7 @@ def main() -> None:
                     "consensus_reached": d.consensus_reached,
                     "consensus_score": round(d.consensus_score, 3),
                     "rounds_used": d.rounds_used,
+                    "estimated_cost": f"${d.estimated_cost:.4f}",
                 }
                 for d in results
             ],
@@ -594,9 +629,11 @@ def main() -> None:
 
         for decision in results:
             with st.expander(f"{decision.document_name} - {decision.classification.value}"):
-                col1, col2 = st.columns(2)
+                col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Confidence", f"{decision.confidence:.2f}")
                 col2.metric("Rounds Used", decision.rounds_used)
+                col3.metric("Total Time", f"{decision.total_duration_s:.2f}s")
+                col4.metric("Est. Cost", f"${decision.estimated_cost:.4f}")
                 st.write("Reason:", decision.reason)
 
                 if len(decision.history) > 1:
@@ -605,19 +642,108 @@ def main() -> None:
                     for h in decision.history:
                         st.markdown(f"**Round {h.round}**")
                         c1, c2 = st.columns(2)
-                        c1.info(f"Agent A: {h.agent_a.classification.value} ({h.agent_a.confidence:.2f})")
+                        c1.info(f"Agent A: {h.agent_a.classification.value} ({h.agent_a.confidence:.2f}) - {h.agent_a_duration_s:.2f}s")
                         c1.caption(h.agent_a.reason)
-                        c2.info(f"Agent B: {h.agent_b.classification.value} ({h.agent_b.confidence:.2f})")
+                        c2.info(f"Agent B: {h.agent_b.classification.value} ({h.agent_b.confidence:.2f}) - {h.agent_b_duration_s:.2f}s")
                         c2.caption(h.agent_b.reason)
 
                 st.write("Matched rubric points:", decision.matched_rubric_points)
-                if decision.total_token_usage:
-                    st.write("Total Token Usage:", decision.total_token_usage.model_dump())
-                    st.write("Supervisor Usage:", decision.supervisor_token_usage.model_dump() if decision.supervisor_token_usage else "N/A")
-                    st.write("Agent A Usage:", decision.agent_a_token_usage.model_dump() if decision.agent_a_token_usage else "N/A")
-                    st.write("Agent B Usage:", decision.agent_b_token_usage.model_dump() if decision.agent_b_token_usage else "N/A")
-                st.write("Agent A vote:", decision.agent_a_vote.model_dump())
-                st.write("Agent B vote:", decision.agent_b_vote.model_dump())
+
+                st.markdown("---")
+                st.subheader("Execution & Cost Breakdown")
+
+                def _get_counts(usage):
+                    if not usage:
+                        return 0, 0, 0
+                    return usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+
+                s_p, s_c, s_t = _get_counts(decision.supervisor_token_usage)
+                a_p, a_c, a_t = _get_counts(decision.agent_a_token_usage)
+                b_p, b_c, b_t = _get_counts(decision.agent_b_token_usage)
+
+                # Calculate totals
+                t_p = s_p + a_p + b_p
+                t_c = s_c + a_c + b_c
+                t_t = s_t + a_t + b_t
+
+                s_cost = decision.supervisor_cost
+                a_cost = decision.agent_a_cost
+                b_cost = decision.agent_b_cost
+                t_cost = s_cost + a_cost + b_cost
+
+                s_time = decision.supervisor_duration_s
+                a_time = decision.agent_a_duration_s
+                b_time = decision.agent_b_duration_s
+                t_time = s_time + a_time + b_time
+
+                breakdown_rows = []
+                
+                # Supervisor
+                breakdown_rows.append({
+                    "Component": "Supervisor (Total)",
+                    "Execution Time": f"{s_time:.2f}s",
+                    "Cost": f"${s_cost:.4f}",
+                    "Prompt Tokens": str(s_p),
+                    "Completion Tokens": str(s_c),
+                    "Total Tokens": str(s_t),
+                })
+
+                # Agent A Total
+                breakdown_rows.append({
+                    "Component": "Agent A (Total)",
+                    "Execution Time": f"{a_time:.2f}s",
+                    "Cost": f"${a_cost:.4f}",
+                    "Prompt Tokens": str(a_p),
+                    "Completion Tokens": str(a_c),
+                    "Total Tokens": str(a_t),
+                })
+
+                # Agent B Total
+                breakdown_rows.append({
+                    "Component": "Agent B (Total)",
+                    "Execution Time": f"{b_time:.2f}s",
+                    "Cost": f"${b_cost:.4f}",
+                    "Prompt Tokens": str(b_p),
+                    "Completion Tokens": str(b_c),
+                    "Total Tokens": str(b_t),
+                })
+
+                # Per Run Data
+                for h in decision.history:
+                    for agent_name, usage, duration, cost in [
+                        (f"Agent A Run {h.round}", h.agent_a_token_usage, h.agent_a_duration_s, h.agent_a_cost),
+                        (f"Agent B Run {h.round}", h.agent_b_token_usage, h.agent_b_duration_s, h.agent_b_cost),
+                    ]:
+                        p, c, t = _get_counts(usage)
+                        breakdown_rows.append({
+                            "Component": agent_name,
+                            "Execution Time": f"{duration:.2f}s",
+                            "Cost": f"${cost:.4f}",
+                            "Prompt Tokens": str(p),
+                            "Completion Tokens": str(c),
+                            "Total Tokens": str(t),
+                        })
+
+                # Total
+                breakdown_rows.append({
+                    "Component": "Total",
+                    "Execution Time": f"{t_time:.2f}s",
+                    "Cost": f"${t_cost:.4f}",
+                    "Prompt Tokens": str(t_p),
+                    "Completion Tokens": str(t_c),
+                    "Total Tokens": str(t_t),
+                })
+
+                breakdown_df = pd.DataFrame(breakdown_rows)
+
+                def highlight_total(row):
+                    return ['background-color: #262730'] * len(row) if row['Component'] == 'Total' else [''] * len(row)
+
+                st.dataframe(breakdown_df.style.apply(highlight_total, axis=1), use_container_width=True, hide_index=True)
+
+                for h in decision.history:
+                    st.write(f"**Agent A Run {h.round}:**", h.agent_a.model_dump())
+                    st.write(f"**Agent B Run {h.round}:**", h.agent_b.model_dump())
 
 
 if __name__ == "__main__":

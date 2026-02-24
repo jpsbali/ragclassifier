@@ -10,6 +10,8 @@ class AgentModelConfig:
     api_key: str
     temperature: float = 0.0
     timeout_s: float = 60.0
+    input_cost_per_m: float = 0.0
+    output_cost_per_m: float = 0.0
 
 
 @dataclass
@@ -71,11 +73,25 @@ def load_default_config() -> AppConfig:
         agent_a_model_env = "OPENROUTER_AGENT_A_MODEL"
         agent_b_model_env = "OPENROUTER_AGENT_B_MODEL"
         base_url_env = "OPENROUTER_BASE_URL"
+
+        sup_in_cost = "OPENROUTER_SUPERVISOR_MODEL_COST_INPUT_TOKENS"
+        sup_out_cost = "OPENROUTER_SUPERVISOR_MODEL_COST_OUTPUT_TOKENS"
+        a_in_cost = "OPENROUTER_AGENT_A_MODEL_COST_INPUT_TOKENS"
+        a_out_cost = "OPENROUTER_AGENT_A_MODEL_COST_OUTPUT_TOKENS"
+        b_in_cost = "OPENROUTER_AGENT_B_MODEL_COST_INPUT_TOKENS"
+        b_out_cost = "OPENROUTER_AGENT_B_MODEL_COST_OUTPUT_TOKENS"
     else:
         supervisor_model_env = "OPENAI_SUPERVISOR_MODEL"
         agent_a_model_env = "OPENAI_AGENT_A_MODEL"
         agent_b_model_env = "OPENAI_AGENT_B_MODEL"
         base_url_env = "OPENAI_BASE_URL"
+
+        sup_in_cost = "OPENAI_SUPERVISOR_MODEL_COST_INPUT_TOKENS"
+        sup_out_cost = "OPENAI_SUPERVISOR_MODEL_COST_OUTPUT_TOKENS"
+        a_in_cost = "OPENAI_AGENT_A_MODEL_COST_INPUT_TOKENS"
+        a_out_cost = "OPENAI_AGENT_A_MODEL_COST_OUTPUT_TOKENS"
+        b_in_cost = "OPENAI_AGENT_B_MODEL_COST_INPUT_TOKENS"
+        b_out_cost = "OPENAI_AGENT_B_MODEL_COST_OUTPUT_TOKENS"
 
     supervisor = AgentModelConfig(
         name="supervisor",
@@ -84,6 +100,8 @@ def load_default_config() -> AppConfig:
         api_key=_fallback_key("SUPERVISOR_API_KEY", *api_key_fallbacks),
         temperature=_env_float("SUPERVISOR_TEMPERATURE", 0.1),
         timeout_s=_env_float("SUPERVISOR_TIMEOUT_S", 60.0),
+        input_cost_per_m=_env_float(sup_in_cost, 0.0),
+        output_cost_per_m=_env_float(sup_out_cost, 0.0),
     )
     agent_a = AgentModelConfig(
         name="agent_a",
@@ -92,6 +110,8 @@ def load_default_config() -> AppConfig:
         api_key=_fallback_key("AGENT_A_API_KEY", *api_key_fallbacks),
         temperature=_env_float("AGENT_A_TEMPERATURE", 0.0),
         timeout_s=_env_float("AGENT_A_TIMEOUT_S", 60.0),
+        input_cost_per_m=_env_float(a_in_cost, 0.0),
+        output_cost_per_m=_env_float(a_out_cost, 0.0),
     )
     agent_b = AgentModelConfig(
         name="agent_b",
@@ -100,6 +120,8 @@ def load_default_config() -> AppConfig:
         api_key=_fallback_key("AGENT_B_API_KEY", *api_key_fallbacks),
         temperature=_env_float("AGENT_B_TEMPERATURE", 0.0),
         timeout_s=_env_float("AGENT_B_TIMEOUT_S", 60.0),
+        input_cost_per_m=_env_float(b_in_cost, 0.0),
+        output_cost_per_m=_env_float(b_out_cost, 0.0),
     )
 
     consensus = ConsensusConfig(

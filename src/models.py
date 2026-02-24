@@ -30,6 +30,12 @@ class RoundHistory(BaseModel):
     round: int
     agent_a: AgentVote
     agent_b: AgentVote
+    agent_a_duration_s: float = 0.0
+    agent_b_duration_s: float = 0.0
+    agent_a_token_usage: TokenUsage | None = None
+    agent_b_token_usage: TokenUsage | None = None
+    agent_a_cost: float = 0.0
+    agent_b_cost: float = 0.0
 
 
 class SupervisorDecision(BaseModel):
@@ -49,3 +55,11 @@ class SupervisorDecision(BaseModel):
     agent_a_token_usage: TokenUsage | None = None
     agent_b_token_usage: TokenUsage | None = None
     history: list[RoundHistory] = Field(default_factory=list)
+    total_duration_s: float = 0.0
+    supervisor_duration_s: float = 0.0
+    agent_a_duration_s: float = 0.0
+    agent_b_duration_s: float = 0.0
+    estimated_cost: float = 0.0
+    supervisor_cost: float = 0.0
+    agent_a_cost: float = 0.0
+    agent_b_cost: float = 0.0
