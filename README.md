@@ -14,13 +14,16 @@ It uses:
 
 ## Quickstart
 
-1. Sync dependencies with `uv`:
+1. Sync dependencies with `uv` and activate virtual environment:
 
 ```bash
 uv sync
+source .venv/Scripts/activate
 ```
 
 2. Create `.env` from `.env.example` and set keys/models/endpoints.
+
+
 3. Run:
 
 ```bash

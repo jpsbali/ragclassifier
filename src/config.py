@@ -29,6 +29,7 @@ class AppConfig:
     agent_a: AgentModelConfig
     agent_b: AgentModelConfig
     consensus: ConsensusConfig
+    max_file_size_mb: int = 10
 
 
 def _env_float(name: str, default: float) -> float:
@@ -97,4 +98,5 @@ def load_default_config() -> AppConfig:
         agent_a=agent_a,
         agent_b=agent_b,
         consensus=consensus,
+        max_file_size_mb=_env_int("MAX_FILE_SIZE_MB", 10),
     )

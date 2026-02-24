@@ -27,6 +27,9 @@ htmlcov/
 # Logs
 *.log
 
+# Results
+results/
+
 # Editor and OS files
 .idea/
 .vscode/

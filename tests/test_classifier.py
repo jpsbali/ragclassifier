@@ -30,6 +30,7 @@ def _test_config(max_rounds: int = 3) -> AppConfig:
             api_key="dummy",
         ),
         consensus=ConsensusConfig(min_confidence=0.9, max_rounds=max_rounds),
+        max_file_size_mb=10,
     )
 
 

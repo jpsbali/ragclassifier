@@ -9,6 +9,12 @@ class ClassificationLabel(str, Enum):
     PUBLIC = "PUBLIC"
 
 
+class TokenUsage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
 class AgentVote(BaseModel):
     classification: ClassificationLabel
     confidence: float = Field(ge=0.0, le=1.0)
@@ -32,4 +38,4 @@ class SupervisorDecision(BaseModel):
     consensus_reached: bool
     consensus_score: float = Field(ge=0.0, le=1.0)
     rounds_used: int = Field(ge=1)
-
+    total_token_usage: TokenUsage | None = None

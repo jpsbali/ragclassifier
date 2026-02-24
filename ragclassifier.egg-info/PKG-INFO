@@ -12,6 +12,8 @@ Requires-Dist: pydantic>=2.9.2
 Requires-Dist: python-dotenv>=1.0.1
 Requires-Dist: pypdf>=5.1.0
 Requires-Dist: python-docx>=1.1.2
+Requires-Dist: python-pptx>=0.6.23
+Requires-Dist: openpyxl>=3.1.5
 
 # LangGraph Multi-Agent Document Classifier
 
@@ -29,13 +31,16 @@ It uses:
 
 ## Quickstart
 
-1. Sync dependencies with `uv`:
+1. Sync dependencies with `uv` and activate virtual environment:
 
 ```bash
 uv sync
+source .venv/Scripts/activate
 ```
 
 2. Create `.env` from `.env.example` and set keys/models/endpoints.
+
+
 3. Run:
 
 ```bash
@@ -66,6 +71,34 @@ uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx
 
 ```bash
 uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx --force-disagreement
+```
+
+## Command Reference
+
+```bash
+# Install runtime dependencies
+uv sync
+
+# Install runtime + dev dependencies
+uv sync --group dev
+
+# Run Streamlit app
+uv run streamlit run app.py
+
+# Run offline tests
+uv run pytest -q
+
+# Run dummy CLI via Python module path
+uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx
+uv run python scripts/dummy_test_cli.py --document ClassifyingRules.docx --force-disagreement
+
+# Run dummy CLI via uv entrypoint
+uv run dummy-test --document ClassifyingRules.docx
+uv run dummy-test --document ClassifyingRules.docx --force-disagreement
+
+# Optional direct execution (without uv run)
+chmod +x scripts/dummy_test_cli.py
+./scripts/dummy_test_cli.py --document ClassifyingRules.docx
 ```
 
 ## Notes

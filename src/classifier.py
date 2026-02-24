@@ -11,7 +11,7 @@ from src.agents import (
     finalize_with_supervisor,
 )
 from src.config import AppConfig
-from src.models import AgentVote, SupervisorDecision
+from src.models import AgentVote, SupervisorDecision, TokenUsage
 
 
 class GraphState(TypedDict, total=False):
@@ -25,6 +25,7 @@ class GraphState(TypedDict, total=False):
     consensus_reached: bool
     consensus_score: float
     should_finalize: bool
+    token_usages: list[dict[str, int]]
     supervisor_decision: dict[str, Any]
 
 
@@ -59,12 +60,17 @@ class DocumentClassifier:
                 round_num=round_num,
                 retry_context=retry_context,
             )
-            agent_a_vote = agent_a_future.result()
-            agent_b_vote = agent_b_future.result()
+            agent_a_vote, agent_a_tokens = agent_a_future.result()
+            agent_b_vote, agent_b_tokens = agent_b_future.result()
+
+        current_usages = state.get("token_usages", [])
+        current_usages.append(agent_a_tokens.model_dump())
+        current_usages.append(agent_b_tokens.model_dump())
 
         return {
             "agent_a_vote": agent_a_vote.model_dump(),
             "agent_b_vote": agent_b_vote.model_dump(),
+            "token_usages": current_usages,
         }
 
     def _evaluate_votes(self, state: GraphState) -> GraphState:
@@ -94,7 +100,7 @@ class DocumentClassifier:
         agent_a = AgentVote.model_validate(state["agent_a_vote"])
         agent_b = AgentVote.model_validate(state["agent_b_vote"])
 
-        guidance = build_reconciliation_guidance(
+        guidance, recon_tokens = build_reconciliation_guidance(
             supervisor_llm=self.supervisor_llm,
             document_name=state["document_name"],
             document_text=state["document_text"],
@@ -103,16 +109,20 @@ class DocumentClassifier:
             agent_b_vote=agent_b,
         )
 
+        current_usages = state.get("token_usages", [])
+        current_usages.append(recon_tokens.model_dump())
+
         return {
             "retry_context": guidance.instructions_for_retry,
             "round_num": round_num + 1,
+            "token_usages": current_usages,
         }
 
     def _finalize(self, state: GraphState) -> GraphState:
         agent_a = AgentVote.model_validate(state["agent_a_vote"])
         agent_b = AgentVote.model_validate(state["agent_b_vote"])
 
-        final_decision: SupervisorDecision = finalize_with_supervisor(
+        final_decision, finalizer_tokens = finalize_with_supervisor(
             supervisor_llm=self.supervisor_llm,
             document_id=state["document_id"],
             document_name=state["document_name"],
@@ -122,6 +132,20 @@ class DocumentClassifier:
             agent_a_vote=agent_a,
             agent_b_vote=agent_b,
         )
+
+        current_usages = state.get("token_usages", [])
+        current_usages.append(finalizer_tokens.model_dump())
+
+        total_prompt = sum(u.get("prompt_tokens", 0) for u in current_usages)
+        total_completion = sum(u.get("completion_tokens", 0) for u in current_usages)
+        total = sum(u.get("total_tokens", 0) for u in current_usages)
+
+        total_usage = TokenUsage(
+            prompt_tokens=total_prompt,
+            completion_tokens=total_completion,
+            total_tokens=total,
+        )
+        final_decision.total_token_usage = total_usage
 
         return {"supervisor_decision": final_decision.model_dump()}
 
@@ -155,6 +179,7 @@ class DocumentClassifier:
             "document_name": document_name,
             "document_text": document_text,
             "round_num": 1,
+            "token_usages": [],
         }
         final_state = self.graph.invoke(initial_state)
         return SupervisorDecision.model_validate(final_state["supervisor_decision"])
