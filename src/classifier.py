@@ -25,16 +25,16 @@ class GraphState(TypedDict, total=False):
     consensus_reached: bool
     consensus_score: float
     should_finalize: bool
-    token_usages: list[dict[str, int]]
+    token_usages: list[dict[str, Any]]
     supervisor_decision: dict[str, Any]
 
 
 class DocumentClassifier:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.supervisor_llm = build_chat_model(config.supervisor)
-        self.agent_a_llm = build_chat_model(config.agent_a)
-        self.agent_b_llm = build_chat_model(config.agent_b)
+        self.supervisor_llm = build_chat_model(config.supervisor, config.use_openrouter)
+        self.agent_a_llm = build_chat_model(config.agent_a, config.use_openrouter)
+        self.agent_b_llm = build_chat_model(config.agent_b, config.use_openrouter)
         self.graph = self._build_graph()
 
     def _run_agents(self, state: GraphState) -> GraphState:
@@ -64,8 +64,12 @@ class DocumentClassifier:
             agent_b_vote, agent_b_tokens = agent_b_future.result()
 
         current_usages = state.get("token_usages", [])
-        current_usages.append(agent_a_tokens.model_dump())
-        current_usages.append(agent_b_tokens.model_dump())
+        
+        usage_a = agent_a_tokens.model_dump()
+        usage_a["source"] = "agent_a"
+        usage_b = agent_b_tokens.model_dump()
+        usage_b["source"] = "agent_b"
+        current_usages.extend([usage_a, usage_b])
 
         return {
             "agent_a_vote": agent_a_vote.model_dump(),
@@ -110,7 +114,9 @@ class DocumentClassifier:
         )
 
         current_usages = state.get("token_usages", [])
-        current_usages.append(recon_tokens.model_dump())
+        usage = recon_tokens.model_dump()
+        usage["source"] = "supervisor"
+        current_usages.append(usage)
 
         return {
             "retry_context": guidance.instructions_for_retry,
@@ -134,18 +140,35 @@ class DocumentClassifier:
         )
 
         current_usages = state.get("token_usages", [])
-        current_usages.append(finalizer_tokens.model_dump())
+        usage = finalizer_tokens.model_dump()
+        usage["source"] = "supervisor"
+        current_usages.append(usage)
 
         total_prompt = sum(u.get("prompt_tokens", 0) for u in current_usages)
         total_completion = sum(u.get("completion_tokens", 0) for u in current_usages)
         total = sum(u.get("total_tokens", 0) for u in current_usages)
+
+        def _sum_usage(source: str) -> TokenUsage:
+            prompt = sum(u.get("prompt_tokens", 0) for u in current_usages if u.get("source") == source)
+            completion = sum(u.get("completion_tokens", 0) for u in current_usages if u.get("source") == source)
+            total_ = sum(u.get("total_tokens", 0) for u in current_usages if u.get("source") == source)
+            return TokenUsage(
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=total_
+            )
 
         total_usage = TokenUsage(
             prompt_tokens=total_prompt,
             completion_tokens=total_completion,
             total_tokens=total,
         )
+        
+        # Populate individual agent usages
         final_decision.total_token_usage = total_usage
+        final_decision.supervisor_token_usage = _sum_usage("supervisor")
+        final_decision.agent_a_token_usage = _sum_usage("agent_a")
+        final_decision.agent_b_token_usage = _sum_usage("agent_b")
 
         return {"supervisor_decision": final_decision.model_dump()}
 

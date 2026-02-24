@@ -2,6 +2,7 @@ from typing import Any, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from src.config import AgentModelConfig
 from src.models import (
@@ -13,17 +14,26 @@ from src.models import (
 from src.rubric import AGENT_SYSTEM_PROMPT, RUBRIC_TEXT
 
 
-def build_chat_model(cfg: AgentModelConfig) -> ChatOpenAI:
-    # If api_key or base_url are empty/None, pass None to ChatOpenAI.
-    # This makes it fall back to environment variables like OPENAI_API_KEY
-    # and the default OpenAI base URL.
-    return ChatOpenAI(
-        model=cfg.model,
-        api_key=cfg.api_key or None,
-        base_url=cfg.base_url or None,
-        temperature=cfg.temperature,
-        timeout=cfg.timeout_s,
-    )
+def build_chat_model(cfg: AgentModelConfig, use_openrouter: bool) -> BaseChatModel:
+    if use_openrouter:
+        return ChatOpenAI(
+            model=cfg.model,
+            api_key=cfg.api_key or None,
+            base_url="https://openrouter.ai/api/v1",
+            temperature=cfg.temperature,
+            timeout=cfg.timeout_s,
+        )
+    else:
+        # If api_key or base_url are empty/None, pass None to ChatOpenAI.
+        # This makes it fall back to environment variables like OPENAI_API_KEY
+        # and the default OpenAI base URL.
+        return ChatOpenAI(
+            model=cfg.model,
+            api_key=cfg.api_key or None,
+            base_url=cfg.base_url or None,
+            temperature=cfg.temperature,
+            timeout=cfg.timeout_s,
+        )
 
 
 def _extract_token_usage(response: dict[str, Any]) -> TokenUsage:

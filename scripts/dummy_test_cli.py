@@ -67,6 +67,7 @@ def _build_offline_config(max_rounds: int, min_confidence: float) -> AppConfig:
             min_confidence=min_confidence,
             max_rounds=max_rounds,
         ),
+        use_openrouter=False,
         max_file_size_mb=50,  # Set a high limit for offline tests
     )
 

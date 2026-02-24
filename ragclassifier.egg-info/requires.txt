@@ -1,6 +1,7 @@
 langgraph>=0.2.50
 langchain-openai>=0.2.9
 langchain-core>=0.3.19
+langchain-community>=0.2.10
 streamlit>=1.39.0
 pydantic>=2.9.2
 python-dotenv>=1.0.1

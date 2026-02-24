@@ -1,11 +1,6 @@
 import os
 from dataclasses import dataclass
-
 from dotenv import load_dotenv
-
-
-DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
-
 
 @dataclass
 class AgentModelConfig:
@@ -29,6 +24,7 @@ class AppConfig:
     agent_a: AgentModelConfig
     agent_b: AgentModelConfig
     consensus: ConsensusConfig
+    use_openrouter: bool = False
     max_file_size_mb: int = 10
 
 
@@ -52,6 +48,11 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name, str(default)).lower()
+    return value in ("true", "1", "t", "y", "yes")
+
+
 def _fallback_key(*names: str) -> str:
     for name in names:
         value = os.getenv(name)
@@ -62,28 +63,41 @@ def _fallback_key(*names: str) -> str:
 
 def load_default_config() -> AppConfig:
     load_dotenv()
+    use_openrouter = _env_bool("USE_OPENROUTER", False)
+    api_key_fallbacks = ("OPENROUTER_API_KEY", "OPENAI_API_KEY") if use_openrouter else ("OPENAI_API_KEY",)
+
+    if use_openrouter:
+        supervisor_model_env = "OPENROUTER_SUPERVISOR_MODEL"
+        agent_a_model_env = "OPENROUTER_AGENT_A_MODEL"
+        agent_b_model_env = "OPENROUTER_AGENT_B_MODEL"
+        base_url_env = "OPENROUTER_BASE_URL"
+    else:
+        supervisor_model_env = "OPENAI_SUPERVISOR_MODEL"
+        agent_a_model_env = "OPENAI_AGENT_A_MODEL"
+        agent_b_model_env = "OPENAI_AGENT_B_MODEL"
+        base_url_env = "OPENAI_BASE_URL"
 
     supervisor = AgentModelConfig(
         name="supervisor",
-        model=os.getenv("SUPERVISOR_MODEL", "gpt-4.1"),
-        base_url=os.getenv("SUPERVISOR_BASE_URL", DEFAULT_OPENAI_BASE_URL),
-        api_key=_fallback_key("SUPERVISOR_API_KEY", "OPENAI_API_KEY"),
+        model=os.getenv(supervisor_model_env, ""),
+        base_url=os.getenv(base_url_env, ""),
+        api_key=_fallback_key("SUPERVISOR_API_KEY", *api_key_fallbacks),
         temperature=_env_float("SUPERVISOR_TEMPERATURE", 0.1),
         timeout_s=_env_float("SUPERVISOR_TIMEOUT_S", 60.0),
     )
     agent_a = AgentModelConfig(
         name="agent_a",
-        model=os.getenv("AGENT_A_MODEL", "gpt-4.1-mini"),
-        base_url=os.getenv("AGENT_A_BASE_URL", DEFAULT_OPENAI_BASE_URL),
-        api_key=_fallback_key("AGENT_A_API_KEY", "OPENAI_API_KEY"),
+        model=os.getenv(agent_a_model_env, ""),
+        base_url=os.getenv(base_url_env, ""),
+        api_key=_fallback_key("AGENT_A_API_KEY", *api_key_fallbacks),
         temperature=_env_float("AGENT_A_TEMPERATURE", 0.0),
         timeout_s=_env_float("AGENT_A_TIMEOUT_S", 60.0),
     )
     agent_b = AgentModelConfig(
         name="agent_b",
-        model=os.getenv("AGENT_B_MODEL", "gpt-4o-mini"),
-        base_url=os.getenv("AGENT_B_BASE_URL", DEFAULT_OPENAI_BASE_URL),
-        api_key=_fallback_key("AGENT_B_API_KEY", "OPENAI_API_KEY"),
+        model=os.getenv(agent_b_model_env, ""),
+        base_url=os.getenv(base_url_env, ""),
+        api_key=_fallback_key("AGENT_B_API_KEY", *api_key_fallbacks),
         temperature=_env_float("AGENT_B_TEMPERATURE", 0.0),
         timeout_s=_env_float("AGENT_B_TIMEOUT_S", 60.0),
     )
@@ -98,5 +112,6 @@ def load_default_config() -> AppConfig:
         agent_a=agent_a,
         agent_b=agent_b,
         consensus=consensus,
+        use_openrouter=use_openrouter,
         max_file_size_mb=_env_int("MAX_FILE_SIZE_MB", 10),
     )

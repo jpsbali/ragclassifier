@@ -7,6 +7,7 @@ Description-Content-Type: text/markdown
 Requires-Dist: langgraph>=0.2.50
 Requires-Dist: langchain-openai>=0.2.9
 Requires-Dist: langchain-core>=0.3.19
+Requires-Dist: langchain-community>=0.2.10
 Requires-Dist: streamlit>=1.39.0
 Requires-Dist: pydantic>=2.9.2
 Requires-Dist: python-dotenv>=1.0.1

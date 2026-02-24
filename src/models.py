@@ -17,7 +17,7 @@ class TokenUsage(BaseModel):
 
 class AgentVote(BaseModel):
     classification: ClassificationLabel
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float
     reason: str = Field(min_length=1)
     matched_rubric_points: list[str] = Field(default_factory=list)
 
@@ -30,12 +30,15 @@ class SupervisorDecision(BaseModel):
     document_id: str
     document_name: str
     classification: ClassificationLabel
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float
     reason: str = Field(min_length=1)
     matched_rubric_points: list[str] = Field(default_factory=list)
     agent_a_vote: AgentVote
     agent_b_vote: AgentVote
     consensus_reached: bool
-    consensus_score: float = Field(ge=0.0, le=1.0)
-    rounds_used: int = Field(ge=1)
+    consensus_score: float
+    rounds_used: int
     total_token_usage: TokenUsage | None = None
+    supervisor_token_usage: TokenUsage | None = None
+    agent_a_token_usage: TokenUsage | None = None
+    agent_b_token_usage: TokenUsage | None = None

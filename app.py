@@ -15,18 +15,25 @@ from src.config import AgentModelConfig, AppConfig, ConsensusConfig, load_defaul
 from src.document_loader import extract_text_from_upload
 
 
-def _render_agent_settings(title: str, cfg: AgentModelConfig) -> AgentModelConfig:
+def _render_agent_settings(
+    title: str, cfg: AgentModelConfig, use_openrouter: bool
+) -> AgentModelConfig:
     st.markdown(f"### {title}")
     model = st.text_input(f"{title} Model", value=cfg.model, key=f"{cfg.name}_model")
+
+    base_url_disabled = use_openrouter
+    base_url_help = "Disabled when using OpenRouter." if use_openrouter else None
     base_url = st.text_input(
-        f"{title} Base URL", value=cfg.base_url, key=f"{cfg.name}_base_url"
+        f"{title} Base URL", value=cfg.base_url, key=f"{cfg.name}_base_url", disabled=base_url_disabled, help=base_url_help
     )
+
+    api_key_help = "Leave blank to use OPENROUTER_API_KEY from environment." if use_openrouter else "Leave blank to use OPENAI_API_KEY from environment. Can be overridden here."
     api_key = st.text_input(
         f"{title} API Key",
         value=cfg.api_key,
         type="password",
         key=f"{cfg.name}_api_key",
-        help="Leave blank to use OPENAI_API_KEY from environment. Can be overridden here.",
+        help=api_key_help,
     )
     temperature = st.slider(
         f"{title} Temperature",
@@ -66,9 +73,11 @@ def build_config_from_sidebar(default_cfg: AppConfig) -> AppConfig:
                 help="Set the maximum size for individual files to be processed.",
             )
 
-            supervisor = _render_agent_settings("Supervisor", default_cfg.supervisor)
-            agent_a = _render_agent_settings("Agent A", default_cfg.agent_a)
-            agent_b = _render_agent_settings("Agent B", default_cfg.agent_b)
+            use_openrouter = default_cfg.use_openrouter
+
+            supervisor = _render_agent_settings("Supervisor", default_cfg.supervisor, use_openrouter)
+            agent_a = _render_agent_settings("Agent A", default_cfg.agent_a, use_openrouter)
+            agent_b = _render_agent_settings("Agent B", default_cfg.agent_b, use_openrouter)
 
             st.markdown("### Consensus")
             min_confidence = st.slider(
@@ -90,19 +99,9 @@ def build_config_from_sidebar(default_cfg: AppConfig) -> AppConfig:
             min_confidence=float(min_confidence),
             max_rounds=int(max_rounds),
         ),
+        use_openrouter=default_cfg.use_openrouter,
         max_file_size_mb=int(max_file_size_mb),
     )
-
-
-def _validate_keys(cfg: AppConfig) -> list[str]:
-    missing = []
-    if not cfg.supervisor.api_key:
-        missing.append("Supervisor API key")
-    if not cfg.agent_a.api_key:
-        missing.append("Agent A API key")
-    if not cfg.agent_b.api_key:
-        missing.append("Agent B API key")
-    return missing
 
 
 def _render_history_sidebar(min_confidence: float) -> None:
@@ -451,119 +450,115 @@ def main() -> None:
 
     run_clicked = st.button("Classify Documents", type="primary", disabled=not files_to_process)
     if run_clicked:
-        missing = _validate_keys(runtime_cfg)
-        if missing:
-            st.error(f"Missing required keys: {', '.join(missing)}")
-        else:
-            classifier = DocumentClassifier(runtime_cfg)
-            results = []
-            total_files = len(files_to_process)
-            progress_bar = st.progress(0, text="Starting classification...")
-            max_size_bytes = runtime_cfg.max_file_size_mb * 1024 * 1024
+        classifier = DocumentClassifier(runtime_cfg)
+        results = []
+        total_files = len(files_to_process)
+        progress_bar = st.progress(0, text="Starting classification...")
+        max_size_bytes = runtime_cfg.max_file_size_mb * 1024 * 1024
 
-            for i, file_obj in enumerate(files_to_process, start=1):
-                file_name = file_obj.name
-                file_size = 0
-                if hasattr(file_obj, "getvalue"):
-                    # Streamlit UploadedFile
-                    file_size = file_obj.size
-                else:
-                    # pathlib.Path
-                    file_size = file_obj.stat().st_size
-
-                if file_size > max_size_bytes:
-                    st.warning(
-                        f"Skipping '{file_name}': file size ({file_size / (1024*1024):.2f} MB) "
-                        f"exceeds the {runtime_cfg.max_file_size_mb} MB limit."
-                    )
-                    progress_bar.progress(i / total_files, text=f"Processed {i}/{total_files}")
-                    continue
-
-                if hasattr(file_obj, "getvalue"):
-                    content_bytes = file_obj.getvalue()
-                else:
-                    content_bytes = file_obj.read_bytes()
-
-                text = extract_text_from_upload(file_name, content_bytes)
-                if not text:
-                    st.warning(f"Skipping empty document: {file_name}")
-                    progress_bar.progress(i / total_files, text=f"Processed {i}/{total_files}")
-                    continue
-
-                with st.spinner(f"Classifying: {file_name} ({i}/{total_files})"):
-                    decision = classifier.classify_document(
-                        document_id=f"doc-{i}",
-                        document_name=file_name,
-                        document_text=text,
-                    )
-                    results.append(decision)
-
-                progress_bar.progress(i / total_files, text=f"Processed {i}/{total_files}")
-
-            if results:
-                # --- New file export logic ---
-                results_dir = Path("results")
-                results_dir.mkdir(exist_ok=True)
-                run_id = uuid.uuid4().hex[:8]
-
-                # Export summary to CSV
-                csv_filename = results_dir / f"classify_{run_id}.csv"
-                csv_headers = [
-                    "document_id",
-                    "document_name",
-                    "classification",
-                    "confidence",
-                    "consensus_reached",
-                    "consensus_score",
-                    "rounds_used",
-                ]
-                try:
-                    with open(csv_filename, "w", newline="", encoding="utf-8") as f:
-                        writer = csv.DictWriter(f, fieldnames=csv_headers)
-                        writer.writeheader()
-                        for d in results:
-                            writer.writerow(
-                                {
-                                    "document_id": d.document_id,
-                                    "document_name": d.document_name,
-                                    "classification": d.classification.value,
-                                    "confidence": d.confidence,
-                                    "consensus_reached": d.consensus_reached,
-                                    "consensus_score": d.consensus_score,
-                                    "rounds_used": d.rounds_used,
-                                }
-                            )
-                except IOError as e:
-                    st.error(f"Failed to write CSV file: {e}")
-
-                # Export detailed results to JSON
-                json_filename = results_dir / f"classify_{run_id}.json"
-                json_payload = [d.model_dump(mode="json") for d in results]
-                try:
-                    with open(json_filename, "w", encoding="utf-8") as f:
-                        json.dump(json_payload, f, indent=2)
-                except IOError as e:
-                    st.error(f"Failed to write JSON file: {e}")
-
-                st.session_state["results"] = results
-                st.session_state["run_id"] = run_id
-                st.session_state["results_dir"] = str(results_dir)
-
-                # Add to history
-                if "run_history" not in st.session_state:
-                    st.session_state["run_history"] = []
-                st.session_state["run_history"].append({
-                    "run_id": run_id,
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "results": results,
-                    "results_dir": str(results_dir),
-                })
-
-                # Clear the uploader by incrementing the key
-                st.session_state["uploader_key"] += 1
-                st.rerun()
+        for i, file_obj in enumerate(files_to_process, start=1):
+            file_name = file_obj.name
+            file_size = 0
+            if hasattr(file_obj, "getvalue"):
+                # Streamlit UploadedFile
+                file_size = file_obj.size
             else:
-                st.warning("No results to display.")
+                # pathlib.Path
+                file_size = file_obj.stat().st_size
+
+            if file_size > max_size_bytes:
+                st.warning(
+                    f"Skipping '{file_name}': file size ({file_size / (1024*1024):.2f} MB) "
+                    f"exceeds the {runtime_cfg.max_file_size_mb} MB limit."
+                )
+                progress_bar.progress(i / total_files, text=f"Processed {i}/{total_files}")
+                continue
+
+            if hasattr(file_obj, "getvalue"):
+                content_bytes = file_obj.getvalue()
+            else:
+                content_bytes = file_obj.read_bytes()
+
+            text = extract_text_from_upload(file_name, content_bytes)
+            if not text:
+                st.warning(f"Skipping empty document: {file_name}")
+                progress_bar.progress(i / total_files, text=f"Processed {i}/{total_files}")
+                continue
+
+            with st.spinner(f"Classifying: {file_name} ({i}/{total_files})"):
+                decision = classifier.classify_document(
+                    document_id=f"doc-{i}",
+                    document_name=file_name,
+                    document_text=text,
+                )
+                results.append(decision)
+
+            progress_bar.progress(i / total_files, text=f"Processed {i}/{total_files}")
+
+        if results:
+            # --- New file export logic ---
+            results_dir = Path("results")
+            results_dir.mkdir(exist_ok=True)
+            run_id = uuid.uuid4().hex[:8]
+
+            # Export summary to CSV
+            csv_filename = results_dir / f"classify_{run_id}.csv"
+            csv_headers = [
+                "document_id",
+                "document_name",
+                "classification",
+                "confidence",
+                "consensus_reached",
+                "consensus_score",
+                "rounds_used",
+            ]
+            try:
+                with open(csv_filename, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=csv_headers)
+                    writer.writeheader()
+                    for d in results:
+                        writer.writerow(
+                            {
+                                "document_id": d.document_id,
+                                "document_name": d.document_name,
+                                "classification": d.classification.value,
+                                "confidence": d.confidence,
+                                "consensus_reached": d.consensus_reached,
+                                "consensus_score": d.consensus_score,
+                                "rounds_used": d.rounds_used,
+                            }
+                        )
+            except IOError as e:
+                st.error(f"Failed to write CSV file: {e}")
+
+            # Export detailed results to JSON
+            json_filename = results_dir / f"classify_{run_id}.json"
+            json_payload = [d.model_dump(mode="json") for d in results]
+            try:
+                with open(json_filename, "w", encoding="utf-8") as f:
+                    json.dump(json_payload, f, indent=2)
+            except IOError as e:
+                st.error(f"Failed to write JSON file: {e}")
+
+            st.session_state["results"] = results
+            st.session_state["run_id"] = run_id
+            st.session_state["results_dir"] = str(results_dir)
+
+            # Add to history
+            if "run_history" not in st.session_state:
+                st.session_state["run_history"] = []
+            st.session_state["run_history"].append({
+                "run_id": run_id,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "results": results,
+                "results_dir": str(results_dir),
+            })
+
+            # Clear the uploader by incrementing the key
+            st.session_state["uploader_key"] += 1
+            st.rerun()
+        else:
+            st.warning("No results to display.")
 
     if "results" in st.session_state:
         results = st.session_state["results"]
@@ -603,6 +598,9 @@ def main() -> None:
                 st.write("Matched rubric points:", decision.matched_rubric_points)
                 if decision.total_token_usage:
                     st.write("Total Token Usage:", decision.total_token_usage.model_dump())
+                    st.write("Supervisor Usage:", decision.supervisor_token_usage.model_dump() if decision.supervisor_token_usage else "N/A")
+                    st.write("Agent A Usage:", decision.agent_a_token_usage.model_dump() if decision.agent_a_token_usage else "N/A")
+                    st.write("Agent B Usage:", decision.agent_b_token_usage.model_dump() if decision.agent_b_token_usage else "N/A")
                 st.write("Agent A vote:", decision.agent_a_vote.model_dump())
                 st.write("Agent B vote:", decision.agent_b_vote.model_dump())
 
