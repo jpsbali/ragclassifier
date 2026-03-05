@@ -7,8 +7,8 @@ import pandas as pd
 from filelock import FileLock
 
 # Define the directory for results, ensuring it exists.
-RESULTS_DIR = Path("results")
-RESULTS_DIR.mkdir(exist_ok=True)
+REPORTS_DIR = Path("reports")
+REPORTS_DIR.mkdir(exist_ok=True)
 
 # Define the schema based on CLASSIFICATION_RUNS.md, adapted for the multi-agent architecture.
 EXCEL_COLUMNS = [
@@ -48,8 +48,8 @@ def log_run_to_excel(run_data: Dict[str, Any]):
                   matching the EXCEL_COLUMNS schema.
     """
     today = datetime.date.today().strftime("%Y-%m-%d")
-    excel_path = RESULTS_DIR / f"results_{today}.xlsx"
-    lock_path = RESULTS_DIR / f"results_{today}.xlsx.lock"
+    excel_path = REPORTS_DIR / f"report_{today}.xlsx"
+    lock_path = REPORTS_DIR / f"report_{today}.xlsx.lock"
 
     lock = FileLock(lock_path, timeout=15)
 
