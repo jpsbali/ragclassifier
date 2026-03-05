@@ -11,7 +11,7 @@ try:
 except ImportError:
     HAS_REPORTLAB = False
 
-from risk_evaluator import RiskEvaluator, TCHClassification
+from src.risk_evaluator import RiskEvaluator, TCHClassification
 from src.models import SupervisorDecision
 
 

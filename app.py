@@ -14,8 +14,9 @@ from src.classifier import DocumentClassifier
 from zipfile import ZipFile
 from src.config import AgentModelConfig, AppConfig, ConsensusConfig, load_default_config
 from src.document_loader import extract_text_from_upload
-from risk_evaluator import RiskEvaluator, TCHClassification
-from report_generator import generate_pdf_report, HAS_REPORTLAB
+from src.risk_evaluator import RiskEvaluator, TCHClassification
+from src.report_generator import generate_pdf_report, HAS_REPORTLAB
+from src.excel_logger import log_run_to_excel
 
 
 def _initialize_configs_in_state():
@@ -941,6 +942,48 @@ def main() -> None:
                     document_text=text,
                 )
                 results.append(decision)
+
+                # --- Log run to Excel ---
+                try:
+                    # Calculate risk metrics for logging purposes
+                    log_risk_cost = 0.0
+                    log_risk_flag = "Low"
+                    if risk_evaluator:
+                        r_eval = risk_evaluator.calculate_risk(
+                            TCHClassification(decision.classification.value), decision.confidence
+                        )
+                        log_risk_cost = r_eval.expected_cost
+                        if r_eval.is_high_risk:
+                            log_risk_flag = "High"
+
+                    log_data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "run_id": run_id,
+                        "document_id": decision.document_id,
+                        "document_name": decision.document_name,
+                        "supervisor_model": runtime_cfg.supervisor.model,
+                        "agent_a_model": runtime_cfg.agent_a.model,
+                        "agent_b_model": runtime_cfg.agent_b.model,
+                        "model_parameters": {
+                            "supervisor_temp": runtime_cfg.supervisor.temperature,
+                            "agent_a_temp": runtime_cfg.agent_a.temperature,
+                            "agent_b_temp": runtime_cfg.agent_b.temperature,
+                        },
+                        "prompt_version": "1",
+                        "classification": decision.classification.value,
+                        "confidence": decision.confidence,
+                        "consensus_reached": decision.consensus_reached,
+                        "rounds_used": decision.rounds_used,
+                        "estimated_cost": decision.estimated_cost,
+                        "risk_cost": log_risk_cost,
+                        "risk_flag": log_risk_flag,
+                        "input_tokens": decision.total_token_usage.prompt_tokens if decision.total_token_usage else 0,
+                        "output_tokens": decision.total_token_usage.completion_tokens if decision.total_token_usage else 0,
+                        "ground_truth": None,
+                    }
+                    log_run_to_excel(log_data)
+                except Exception as e:
+                    print(f"Failed to log to Excel: {e}")
 
             progress_bar.progress(i / total_files, text=f"Processed {i}/{total_files}")
 

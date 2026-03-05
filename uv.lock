@@ -331,6 +331,15 @@ wheels = [
 ]
 
 [[package]]
+name = "filelock"
+version = "3.25.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/18/a1fd2231c679dcb9726204645721b12498aeac28e1ad0601038f94b42556/filelock-3.25.0.tar.gz", hash = "sha256:8f00faf3abf9dc730a1ffe9c354ae5c04e079ab7d3a683b7c32da5dd05f26af3", size = 40158, upload-time = "2026-03-01T15:08:45.916Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/0b/de6f54d4a8bedfe8645c41497f3c18d749f0bd3218170c667bf4b81d0cdd/filelock-3.25.0-py3-none-any.whl", hash = "sha256:5ccf8069f7948f494968fc0713c10e5c182a9c9d9eef3a636307a20c2490f047", size = 26427, upload-time = "2026-03-01T15:08:44.593Z" },
+]
+
+[[package]]
 name = "frozenlist"
 version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2045,12 +2054,14 @@ name = "ragclassifier"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "filelock" },
     { name = "langchain-community" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "langsmith" },
     { name = "openpyxl" },
+    { name = "pandas" },
     { name = "pydantic" },
     { name = "pypdf" },
     { name = "python-docx" },
@@ -2067,12 +2078,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "filelock", specifier = ">=3.25.0" },
     { name = "langchain-community", specifier = ">=0.2.10" },
     { name = "langchain-core", specifier = ">=0.3.19" },
     { name = "langchain-openai", specifier = ">=0.2.9" },
     { name = "langgraph", specifier = ">=0.2.50" },
     { name = "langsmith", specifier = ">=0.1.0" },
+    { name = "openpyxl" },
     { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "pandas" },
     { name = "pydantic", specifier = ">=2.9.2" },
     { name = "pypdf", specifier = ">=5.1.0" },
     { name = "python-docx", specifier = ">=1.1.2" },

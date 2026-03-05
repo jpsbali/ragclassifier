@@ -3,10 +3,7 @@ from unittest.mock import patch
 import os
 import sys
 
-# Ensure we can import from root directory
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from risk_evaluator import RiskEvaluator, TCHClassification
+from src.risk_evaluator import RiskEvaluator, TCHClassification
 
 class TestRiskEvaluator(unittest.TestCase):
     def setUp(self):
@@ -112,8 +109,9 @@ class TestRiskEvaluator(unittest.TestCase):
           Threshold = 5.0
           Result: 5.75 > 5.0 -> High Risk
         """
+        # Ensure threshold is 0.90 as set in setUp
         eval_result = self.evaluator.calculate_risk(TCHClassification.PUBLIC, 0.90)
-
+        
         self.assertEqual(eval_result.adjusted_prediction, TCHClassification.PUBLIC)
         self.assertAlmostEqual(eval_result.expected_cost, 5.75, places=2)
         self.assertTrue(eval_result.is_high_risk)
