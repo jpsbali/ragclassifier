@@ -7,6 +7,7 @@ class ClassificationLabel(str, Enum):
     RESTRICTED = "RESTRICTED"
     CONFIDENTIAL = "CONFIDENTIAL"
     PUBLIC = "PUBLIC"
+    HUMAN_REVIEW = "HUMAN_REVIEW"  # A workflow state, not a data class, indicating manual review is needed.
 
 
 class TokenUsage(BaseModel):
@@ -50,6 +51,7 @@ class SupervisorDecision(BaseModel):
     consensus_reached: bool
     consensus_score: float
     rounds_used: int
+    review_priority: str | None = Field(None, description="Priority for human review (e.g., 'HIGH').")
     total_token_usage: TokenUsage | None = None
     supervisor_token_usage: TokenUsage | None = None
     agent_a_token_usage: TokenUsage | None = None

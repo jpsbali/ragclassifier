@@ -143,7 +143,27 @@ def finalize_with_supervisor(
     agent_a_vote: AgentVote,
     agent_b_vote: AgentVote,
 ) -> Tuple[SupervisorDecision, TokenUsage]:
-    """Generates the final decision and returns it with token usage."""
+    """
+    Generates the final decision using the supervisor LLM.
+
+    The supervisor is prompted with the final votes and a set of rules to make a
+    conclusive decision. These rules include enforcing `HUMAN_REVIEW` for
+    persistent disagreements or two-tier gaps, with the latter being marked
+    as high-priority.
+
+    Args:
+        supervisor_llm: The chat model for the supervisor.
+        document_id: The ID of the document.
+        document_name: The name of the document.
+        rounds_used: The number of debate rounds that occurred.
+        consensus_reached: Whether the agents reached consensus.
+        consensus_score: The final consensus score.
+        agent_a_vote: The final vote from Agent A.
+        agent_b_vote: The final vote from Agent B.
+
+    Returns:
+        A tuple containing the final `SupervisorDecision` and the token usage.
+    """
     structured = supervisor_llm.with_structured_output(SupervisorDecision, include_raw=True)
     prompt = f"""
 You are the final decision-maker.
@@ -153,10 +173,13 @@ Rubric:
 {RUBRIC_TEXT}
 
 Decision requirements:
-- If the votes agree and confidence is high, keep the agreed class.
-- If votes disagree, pick the class best supported by rubric evidence.
-- Prefer CONFIDENTIAL as default for sensitive internal data not clearly RESTRICTED or PUBLIC.
-- Keep confidence calibrated (0 to 1).
+- If `rounds_used` is 2 or more and the agent votes still disagree, the classification MUST be HUMAN_REVIEW.
+- If `rounds_used` is 2 or more and there is a two-tier gap between votes (one RESTRICTED, one PUBLIC), the classification MUST be HUMAN_REVIEW and you MUST set `review_priority` to "HIGH".
+- If the above rules for HUMAN_REVIEW do not apply:
+    - If the votes agree and confidence is high, keep the agreed class.
+    - If votes disagree in the first round, pick the class best supported by rubric evidence.
+    - Prefer CONFIDENTIAL as default for sensitive internal data not clearly RESTRICTED or PUBLIC.
+- Keep confidence calibrated (0 to 1). When classifying as HUMAN_REVIEW, set confidence to 0.0 and provide a reason explaining which rule was triggered.
 
 Decision context:
 - document_id: {document_id}

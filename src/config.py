@@ -25,9 +25,11 @@ class AppConfig:
     supervisor: AgentModelConfig
     agent_a: AgentModelConfig
     agent_b: AgentModelConfig
+    evaluator: AgentModelConfig
     consensus: ConsensusConfig
     use_openrouter: bool = False
     max_file_size_mb: int = 10
+    enable_risk_evaluation: bool = True  # If true, enables the cost-based risk evaluation step.
 
 
 def _env_float(name: str, default: float) -> float:
@@ -72,6 +74,7 @@ def load_default_config() -> AppConfig:
         supervisor_model_env = "OPENROUTER_SUPERVISOR_MODEL"
         agent_a_model_env = "OPENROUTER_AGENT_A_MODEL"
         agent_b_model_env = "OPENROUTER_AGENT_B_MODEL"
+        evaluator_model_env = "OPENROUTER_EVALUATOR_MODEL"
         base_url_env = "OPENROUTER_BASE_URL"
 
         sup_in_cost = "OPENROUTER_SUPERVISOR_MODEL_COST_INPUT_TOKENS"
@@ -80,10 +83,13 @@ def load_default_config() -> AppConfig:
         a_out_cost = "OPENROUTER_AGENT_A_MODEL_COST_OUTPUT_TOKENS"
         b_in_cost = "OPENROUTER_AGENT_B_MODEL_COST_INPUT_TOKENS"
         b_out_cost = "OPENROUTER_AGENT_B_MODEL_COST_OUTPUT_TOKENS"
+        eval_in_cost = "OPENROUTER_EVALUATOR_MODEL_COST_INPUT_TOKENS"
+        eval_out_cost = "OPENROUTER_EVALUATOR_MODEL_COST_OUTPUT_TOKENS"
     else:
         supervisor_model_env = "OPENAI_SUPERVISOR_MODEL"
         agent_a_model_env = "OPENAI_AGENT_A_MODEL"
         agent_b_model_env = "OPENAI_AGENT_B_MODEL"
+        evaluator_model_env = "OPENAI_EVALUATOR_MODEL"
         base_url_env = "OPENAI_BASE_URL"
 
         sup_in_cost = "OPENAI_SUPERVISOR_MODEL_COST_INPUT_TOKENS"
@@ -92,6 +98,8 @@ def load_default_config() -> AppConfig:
         a_out_cost = "OPENAI_AGENT_A_MODEL_COST_OUTPUT_TOKENS"
         b_in_cost = "OPENAI_AGENT_B_MODEL_COST_INPUT_TOKENS"
         b_out_cost = "OPENAI_AGENT_B_MODEL_COST_OUTPUT_TOKENS"
+        eval_in_cost = "OPENAI_EVALUATOR_MODEL_COST_INPUT_TOKENS"
+        eval_out_cost = "OPENAI_EVALUATOR_MODEL_COST_OUTPUT_TOKENS"
 
     supervisor = AgentModelConfig(
         name="supervisor",
@@ -123,6 +131,16 @@ def load_default_config() -> AppConfig:
         input_cost_per_m=_env_float(b_in_cost, 0.0),
         output_cost_per_m=_env_float(b_out_cost, 0.0),
     )
+    evaluator = AgentModelConfig(
+        name="evaluator",
+        model=os.getenv(evaluator_model_env, ""),
+        base_url=os.getenv(base_url_env, ""),
+        api_key=_fallback_key("EVALUATOR_API_KEY", *api_key_fallbacks),
+        temperature=_env_float("EVALUATOR_TEMPERATURE", 0.0),
+        timeout_s=_env_float("EVALUATOR_TIMEOUT_S", 60.0),
+        input_cost_per_m=_env_float(eval_in_cost, 0.0),
+        output_cost_per_m=_env_float(eval_out_cost, 0.0),
+    )
 
     consensus = ConsensusConfig(
         min_confidence=_env_float("CONSENSUS_MIN_CONFIDENCE", 0.90),
@@ -133,7 +151,9 @@ def load_default_config() -> AppConfig:
         supervisor=supervisor,
         agent_a=agent_a,
         agent_b=agent_b,
+        evaluator=evaluator,
         consensus=consensus,
         use_openrouter=use_openrouter,
         max_file_size_mb=_env_int("MAX_FILE_SIZE_MB", 10),
+        enable_risk_evaluation=_env_bool("ENABLE_RISK_EVALUATION", True),
     )
