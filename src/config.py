@@ -29,6 +29,7 @@ class AppConfig:
     consensus: ConsensusConfig
     use_openrouter: bool = False
     max_file_size_mb: int = 10
+    chunked_document_tokens: int = 25000
     enable_risk_evaluation: bool = True  # If true, enables the cost-based risk evaluation step.
 
 
@@ -155,5 +156,6 @@ def load_default_config() -> AppConfig:
         consensus=consensus,
         use_openrouter=use_openrouter,
         max_file_size_mb=_env_int("MAX_FILE_SIZE_MB", 10),
+        chunked_document_tokens=_env_int("CHUNKED_DOCUMENT_TOKENS", 25000),
         enable_risk_evaluation=_env_bool("ENABLE_RISK_EVALUATION", True),
     )

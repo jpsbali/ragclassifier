@@ -1,5 +1,6 @@
-from typing import Any, TypedDict
+from typing import Any, List, TypedDict
 import time
+import math
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -12,7 +13,7 @@ from src.agents import (
     finalize_with_supervisor,
 )
 from src.config import AppConfig
-from src.models import AgentVote, RoundHistory, SupervisorDecision, TokenUsage
+from src.models import AgentVote, ClassificationLabel, RoundHistory, SupervisorDecision, TokenUsage
 
 
 class GraphState(TypedDict, total=False):
@@ -50,6 +51,74 @@ class DocumentClassifier:
         self.agent_a_llm = build_chat_model(config.agent_a, config.use_openrouter)
         self.agent_b_llm = build_chat_model(config.agent_b, config.use_openrouter)
         self.graph = self._build_graph()
+        self._classification_hierarchy = {
+            ClassificationLabel.PUBLIC: 1,
+            ClassificationLabel.CONFIDENTIAL: 2,
+            ClassificationLabel.RESTRICTED: 3,
+        }
+
+    def _create_aggregated_decision(
+        self,
+        document_id: str,
+        document_name: str,
+        chunk_decisions: List[SupervisorDecision],
+        highest_classification: ClassificationLabel,
+    ) -> SupervisorDecision:
+        """Creates an aggregated decision from a list of chunk decisions."""
+        deciding_chunk_decision = next(
+            (d for d in chunk_decisions if d.classification == highest_classification),
+            chunk_decisions[-1],
+        )
+
+        def _sum_token_usage(field_name: str) -> TokenUsage:
+            total_prompt = sum(
+                (getattr(d, field_name).prompt_tokens if getattr(d, field_name) else 0)
+                for d in chunk_decisions
+            )
+            total_completion = sum(
+                (getattr(d, field_name).completion_tokens if getattr(d, field_name) else 0)
+                for d in chunk_decisions
+            )
+            return TokenUsage(
+                prompt_tokens=total_prompt,
+                completion_tokens=total_completion,
+                total_tokens=total_prompt + total_completion,
+            )
+
+        total_duration_s = sum(d.total_duration_s for d in chunk_decisions)
+        estimated_cost = sum(d.estimated_cost for d in chunk_decisions)
+
+        return SupervisorDecision(
+            document_id=document_id,
+            document_name=document_name,
+            classification=highest_classification,
+            confidence=deciding_chunk_decision.confidence,
+            reason=f"Aggregated decision from {len(chunk_decisions)} chunks. "
+            f"Final classification determined by chunk "
+            f"'{deciding_chunk_decision.document_name}'. "
+            f"Reason: {deciding_chunk_decision.reason}",
+            matched_rubric_points=deciding_chunk_decision.matched_rubric_points,
+            agent_a_vote=deciding_chunk_decision.agent_a_vote,
+            agent_b_vote=deciding_chunk_decision.agent_b_vote,
+            consensus_reached=all(d.consensus_reached for d in chunk_decisions),
+            consensus_score=sum(d.consensus_score for d in chunk_decisions)
+            / len(chunk_decisions),
+            rounds_used=sum(d.rounds_used for d in chunk_decisions),
+            total_duration_s=total_duration_s,
+            supervisor_duration_s=sum(d.supervisor_duration_s for d in chunk_decisions),
+            agent_a_duration_s=sum(d.agent_a_duration_s for d in chunk_decisions),
+            agent_b_duration_s=sum(d.agent_b_duration_s for d in chunk_decisions),
+            estimated_cost=estimated_cost,
+            supervisor_cost=sum(d.supervisor_cost for d in chunk_decisions),
+            agent_a_cost=sum(d.agent_a_cost for d in chunk_decisions),
+            agent_b_cost=sum(d.agent_b_cost for d in chunk_decisions),
+            history=deciding_chunk_decision.history,
+            review_priority=deciding_chunk_decision.review_priority,
+            total_token_usage=_sum_token_usage("total_token_usage"),
+            supervisor_token_usage=_sum_token_usage("supervisor_token_usage"),
+            agent_a_token_usage=_sum_token_usage("agent_a_token_usage"),
+            agent_b_token_usage=_sum_token_usage("agent_b_token_usage"),
+        )
 
     def _run_agents(self, state: GraphState) -> GraphState:
         round_num = state.get("round_num", 1)
@@ -307,14 +376,86 @@ class DocumentClassifier:
         self, document_id: str, document_name: str, document_text: str
     ) -> SupervisorDecision:
         start_time = time.time()
-        initial_state: GraphState = {
-            "document_id": document_id,
-            "document_name": document_name,
-            "document_text": document_text,
-            "round_num": 1,
-            "token_usages": [],
-        }
-        final_state = self.graph.invoke(initial_state)
-        decision = SupervisorDecision.model_validate(final_state["supervisor_decision"])
-        decision.total_duration_s = time.time() - start_time
-        return decision
+        
+        # Using a character-based approximation for tokens
+        chunk_size_chars = self.config.chunked_document_tokens * 4
+        
+        if len(document_text) <= chunk_size_chars:
+            # If the document is small enough, classify it in one go
+            initial_state: GraphState = {
+                "document_id": document_id,
+                "document_name": document_name,
+                "document_text": document_text,
+                "round_num": 1,
+                "token_usages": [],
+            }
+            final_state = self.graph.invoke(initial_state)
+            decision = SupervisorDecision.model_validate(final_state["supervisor_decision"])
+            decision.total_duration_s = time.time() - start_time
+            return decision
+
+        # Chunk the document
+        chunks = [
+            document_text[i : i + chunk_size_chars]
+            for i in range(0, len(document_text), chunk_size_chars)
+        ]
+        
+        highest_classification = ClassificationLabel.PUBLIC
+        chunk_decisions = []
+
+        for i, chunk in enumerate(chunks):
+            chunk_doc_name = f"{document_name} (chunk {i+1}/{len(chunks)})"
+            
+            initial_state: GraphState = {
+                "document_id": document_id,
+                "document_name": chunk_doc_name,
+                "document_text": chunk,
+                "round_num": 1,
+                "token_usages": [],
+            }
+            
+            final_state = self.graph.invoke(initial_state)
+            chunk_decision = SupervisorDecision.model_validate(final_state["supervisor_decision"])
+            chunk_decisions.append(chunk_decision)
+
+            current_classification = chunk_decision.classification
+            if self._classification_hierarchy.get(
+                current_classification, 0
+            ) > self._classification_hierarchy.get(highest_classification, 0):
+                highest_classification = current_classification
+
+            if highest_classification == ClassificationLabel.RESTRICTED:
+                break  # Early exit
+
+        if not chunk_decisions:
+            dummy_vote = AgentVote(
+                classification=ClassificationLabel.HUMAN_REVIEW,
+                confidence=0.0,
+                reason="No decision from chunking.",
+            )
+            return SupervisorDecision(
+                document_id=document_id,
+                document_name=document_name,
+                classification=ClassificationLabel.HUMAN_REVIEW,
+                confidence=0.0,
+                reason="Document was chunked but no decisions were made.",
+                agent_a_vote=dummy_vote,
+                agent_b_vote=dummy_vote,
+                consensus_reached=False,
+                consensus_score=0.0,
+                rounds_used=0,
+            )
+
+        if len(chunk_decisions) == 1:
+            # If there was only one chunk, we can return its decision directly
+            # after updating the total duration
+            decision = chunk_decisions[0]
+            decision.total_duration_s = time.time() - start_time
+            return decision
+
+        # Create an aggregated decision
+        aggregated_decision = self._create_aggregated_decision(
+            document_id, document_name, chunk_decisions, highest_classification
+        )
+        aggregated_decision.total_duration_s = time.time() - start_time
+        return aggregated_decision
