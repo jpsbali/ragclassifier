@@ -1,5 +1,7 @@
+import json
 from typing import Any, Tuple
 
+import pydantic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -56,8 +58,28 @@ def classify_with_agent(
     document_text: str,
     round_num: int,
     retry_context: str | None = None,
+    max_retries: int = 3,
 ) -> Tuple[AgentVote, TokenUsage]:
-    """Classifies a document and returns the vote and token usage."""
+    """
+    Classifies a document and returns the vote and token usage.
+
+    This function includes a retry mechanism to handle potential JSON decoding
+    or validation errors from the LLM.
+
+    Args:
+        llm: The ChatOpenAI model instance.
+        document_name: The name of the document.
+        document_text: The content of the document.
+        round_num: The current classification round.
+        retry_context: Optional context for retrying a classification.
+        max_retries: The maximum number of retries for parsing the output.
+
+    Returns:
+        A tuple containing the `AgentVote` and `TokenUsage`.
+
+    Raises:
+        ValueError: If parsing fails after all retries.
+    """
     structured = llm.with_structured_output(AgentVote, include_raw=True)
 
     user_prompt = f"""
@@ -76,15 +98,25 @@ Retry context:
 {retry_context}
 """
 
-    response = structured.invoke(
-        [
-            SystemMessage(content=AGENT_SYSTEM_PROMPT),
-            HumanMessage(content=user_prompt),
-        ]
-    )
-    vote = response["parsed"]
-    token_usage = _extract_token_usage(response)
-    return vote, token_usage
+    messages = [
+        SystemMessage(content=AGENT_SYSTEM_PROMPT),
+        HumanMessage(content=user_prompt),
+    ]
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = structured.invoke(messages)
+            vote = response["parsed"]
+            token_usage = _extract_token_usage(response)
+            return vote, token_usage
+        except (json.JSONDecodeError, pydantic.ValidationError) as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt >= max_retries:
+                raise ValueError(f"Failed to parse AgentVote after {max_retries + 1} attempts.") from e
+
+    # This part should be unreachable, but mypy might complain without it.
+    # The loop above will either return or raise an exception.
+    raise RuntimeError("classify_with_agent failed unexpectedly.")
 
 
 def build_reconciliation_guidance(
@@ -94,8 +126,13 @@ def build_reconciliation_guidance(
     round_num: int,
     agent_a_vote: AgentVote,
     agent_b_vote: AgentVote,
+    max_retries: int = 3,
 ) -> Tuple[ReconciliationGuidance, TokenUsage]:
-    """Builds reconciliation guidance and returns it with token usage."""
+    """
+    Builds reconciliation guidance and returns it with token usage.
+
+    Includes a retry mechanism to handle potential parsing errors from the LLM.
+    """
     structured = supervisor_llm.with_structured_output(
         ReconciliationGuidance, include_raw=True
     )
@@ -120,17 +157,27 @@ Agent A vote:
 Agent B vote:
 {agent_b_vote.model_dump_json(indent=2)}
 """
-    response = structured.invoke(
-        [
-            SystemMessage(
-                content="Write concise, evidence-focused retry instructions for both agents."
-            ),
-            HumanMessage(content=prompt),
-        ]
-    )
-    guidance = response["parsed"]
-    token_usage = _extract_token_usage(response)
-    return guidance, token_usage
+    messages = [
+        SystemMessage(
+            content="Write concise, evidence-focused retry instructions for both agents."
+        ),
+        HumanMessage(content=prompt),
+    ]
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = structured.invoke(messages)
+            guidance = response["parsed"]
+            token_usage = _extract_token_usage(response)
+            return guidance, token_usage
+        except (json.JSONDecodeError, pydantic.ValidationError) as e:
+            print(f"Attempt {attempt + 1} failed during reconciliation guidance: {e}")
+            if attempt >= max_retries:
+                raise ValueError(
+                    f"Failed to parse ReconciliationGuidance after {max_retries + 1} attempts."
+                ) from e
+
+    raise RuntimeError("build_reconciliation_guidance failed unexpectedly.")
 
 
 def finalize_with_supervisor(
@@ -142,27 +189,12 @@ def finalize_with_supervisor(
     consensus_score: float,
     agent_a_vote: AgentVote,
     agent_b_vote: AgentVote,
+    max_retries: int = 3,
 ) -> Tuple[SupervisorDecision, TokenUsage]:
     """
     Generates the final decision using the supervisor LLM.
 
-    The supervisor is prompted with the final votes and a set of rules to make a
-    conclusive decision. These rules include enforcing `HUMAN_REVIEW` for
-    persistent disagreements or two-tier gaps, with the latter being marked
-    as high-priority.
-
-    Args:
-        supervisor_llm: The chat model for the supervisor.
-        document_id: The ID of the document.
-        document_name: The name of the document.
-        rounds_used: The number of debate rounds that occurred.
-        consensus_reached: Whether the agents reached consensus.
-        consensus_score: The final consensus score.
-        agent_a_vote: The final vote from Agent A.
-        agent_b_vote: The final vote from Agent B.
-
-    Returns:
-        A tuple containing the final `SupervisorDecision` and the token usage.
+    Includes a retry mechanism to handle potential parsing errors from the LLM.
     """
     structured = supervisor_llm.with_structured_output(SupervisorDecision, include_raw=True)
     prompt = f"""
@@ -194,16 +226,26 @@ Agent A vote:
 Agent B vote:
 {agent_b_vote.model_dump_json(indent=2)}
 """
-    response = structured.invoke(
-        [
-            SystemMessage(
-                content=(
-                    "Return a complete SupervisorDecision object with clear rationale tied to rubric."
-                )
-            ),
-            HumanMessage(content=prompt),
-        ]
-    )
-    decision = response["parsed"]
-    token_usage = _extract_token_usage(response)
-    return decision, token_usage
+    messages = [
+        SystemMessage(
+            content=(
+                "Return a complete SupervisorDecision object with clear rationale tied to rubric."
+            )
+        ),
+        HumanMessage(content=prompt),
+    ]
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = structured.invoke(messages)
+            decision = response["parsed"]
+            token_usage = _extract_token_usage(response)
+            return decision, token_usage
+        except (json.JSONDecodeError, pydantic.ValidationError) as e:
+            print(f"Attempt {attempt + 1} failed during finalization: {e}")
+            if attempt >= max_retries:
+                raise ValueError(
+                    f"Failed to parse SupervisorDecision after {max_retries + 1} attempts."
+                ) from e
+
+    raise RuntimeError("finalize_with_supervisor failed unexpectedly.")
