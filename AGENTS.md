@@ -26,7 +26,6 @@ After consensus is reached (or max rounds hit), the Supervisor makes the final c
 - If agents **still disagree after 2+ rounds** → `HUMAN_REVIEW`
 - If there's a **two-tier gap** (one says `PUBLIC`, other says `RESTRICTED`) → `HUMAN_REVIEW` with `HIGH` priority
 - If votes agree with high confidence → keeps the agreed class
-- If votes disagree in round 1 → picks the class best supported by rubric evidence
 
 ## The Flow
 
